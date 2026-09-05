@@ -12,7 +12,7 @@
     "auth:prune": "node scripts/server.mjs prune",
     "check": "pnpm --filter @starter/pwa check",
     "build": "pnpm --filter @starter/pwa build",
-    "test": "node --import tsx --test tests/client.test.ts",
+    "test": "node --import tsx --test tests/client.test.ts tests/tooling.test.mjs",
     "test:e2e": "playwright test",
     "verify": "cargo fmt --all --check && cargo clippy --locked --all-targets -- -D warnings && cargo test --locked && pnpm check && pnpm test && pnpm build",
     "starter:rename": "node scripts/rename.mjs"
