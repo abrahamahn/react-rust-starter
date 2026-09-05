@@ -1,0 +1,4 @@
+packages:
+  - apps/pwa
+onlyBuiltDependencies:
+  - esbuild

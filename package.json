@@ -1,0 +1,26 @@
+{
+  "name": "react-rust-starter",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@10.26.2",
+  "engines": { "node": ">=22.16 <25" },
+  "scripts": {
+    "dev": "node scripts/dev.mjs",
+    "dev:web": "pnpm --filter @starter/pwa dev",
+    "db:migrate": "node scripts/server.mjs migrate",
+    "db:check": "node scripts/server.mjs check",
+    "auth:prune": "node scripts/server.mjs prune",
+    "check": "pnpm --filter @starter/pwa check",
+    "build": "pnpm --filter @starter/pwa build",
+    "test": "node --import tsx --test tests/client.test.ts",
+    "test:e2e": "playwright test",
+    "verify": "cargo fmt --all --check && cargo clippy --locked --all-targets -- -D warnings && cargo test --locked && pnpm check && pnpm test && pnpm build",
+    "starter:rename": "node scripts/rename.mjs"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.58.2",
+    "@types/node": "^24.0.0",
+    "tsx": "^4.21.0",
+    "typescript": "^5.9.3"
+  }
+}

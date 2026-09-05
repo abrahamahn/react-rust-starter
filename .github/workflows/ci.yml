@@ -1,0 +1,71 @@
+name: Starter verification
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: starter-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  prepare-generated-review:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@41ff72655975bd51cab0327fa583b6e92b6d3061
+        with:
+          version: 10.26.2
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: 24
+      - name: Generate only lockfiles and rustfmt output
+        run: |
+          rustup toolchain install 1.98.1 --profile minimal --component rustfmt --component clippy
+          cargo generate-lockfile
+          cargo fmt --all
+          pnpm install --lockfile-only --ignore-scripts
+      - name: Store generated objects for review, without commits or ref changes
+        env:
+          REVIEW_TOKEN: ${{ github.token }}
+        run: python3 .github/prepare-generated.py
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: starter
+          POSTGRES_PASSWORD: ci-only-password
+          POSTGRES_DB: starter_test_ci
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U starter -d starter_test_ci"
+          --health-interval 5s --health-timeout 3s --health-retries 10
+    env:
+      APP_MODE: test
+      APP_DATABASE_URL: postgresql://starter:ci-only-password@127.0.0.1:5432/starter_test_ci?sslmode=disable
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+        with:
+          persist-credentials: false
+      - name: Bootstrap compiler and formatting
+        run: |
+          rustup toolchain install 1.98.1 --profile minimal --component rustfmt --component clippy
+          cargo generate-lockfile
+          cargo fmt --all
+      - name: Clippy
+        run: cargo clippy --locked --all-targets -- -D warnings
+      - name: Unit tests
+        run: cargo test --locked
+      - name: Explicit database bootstrap and check
+        run: |
+          cargo run --locked -p starter-server -- migrate
+          cargo run --locked -p starter-server -- check
