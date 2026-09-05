@@ -1,4 +1,8 @@
-use axum::{Json, http::StatusCode, response::{IntoResponse, Response}};
+use axum::{
+    Json,
+    http::StatusCode,
+    response::{IntoResponse, Response},
+};
 use serde_json::json;
 use std::fmt;
 
@@ -50,7 +54,9 @@ impl fmt::Display for Error {
 }
 impl std::error::Error for Error {}
 impl From<tokio_postgres::Error> for Error {
-    fn from(_: tokio_postgres::Error) -> Self { Self::Unavailable }
+    fn from(_: tokio_postgres::Error) -> Self {
+        Self::Unavailable
+    }
 }
 impl IntoResponse for Error {
     fn into_response(self) -> Response {
@@ -66,9 +72,13 @@ impl IntoResponse for Error {
             _ => StatusCode::INTERNAL_SERVER_ERROR,
         };
         let mut response = (status, Json(json!({"error": {"code": self.code()}}))).into_response();
-        response.headers_mut().insert("cache-control", "no-store".parse().unwrap());
+        response
+            .headers_mut()
+            .insert("cache-control", "no-store".parse().unwrap());
         if status == StatusCode::TOO_MANY_REQUESTS {
-            response.headers_mut().insert("retry-after", "300".parse().unwrap());
+            response
+                .headers_mut()
+                .insert("retry-after", "300".parse().unwrap());
         }
         response
     }

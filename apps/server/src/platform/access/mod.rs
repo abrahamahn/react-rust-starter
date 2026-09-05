@@ -1,9 +1,9 @@
 mod crypto;
 mod domain;
 mod http;
+mod service;
 mod session_policy;
 mod store;
-mod service;
 pub use domain::{SessionView, UserView};
 pub use http::router;
 pub use service::Service;

@@ -1,0 +1,20 @@
+name: react-rust-starter-dev
+services:
+  postgres:
+    image: postgres:17
+    environment:
+      POSTGRES_USER: starter
+      POSTGRES_PASSWORD: local-development-only
+      POSTGRES_DB: starter_dev
+    ports: ['127.0.0.1:55432:5432']
+    volumes: ['starter-data:/var/lib/postgresql/data']
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U starter -d starter_dev']
+      interval: 5s
+      timeout: 3s
+      retries: 10
+  mailpit:
+    image: axllent/mailpit:v1.31.1
+    ports: ['127.0.0.1:1025:1025', '127.0.0.1:8025:8025']
+volumes:
+  starter-data:

@@ -1,40 +1,19 @@
 name: Starter verification
+
 on:
   push:
     branches: [main]
+  pull_request:
   workflow_dispatch:
+
 permissions:
   contents: read
+
 concurrency:
   group: starter-${{ github.ref }}
   cancel-in-progress: false
+
 jobs:
-  prepare-generated-review:
-    if: github.ref == 'refs/heads/main'
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    permissions:
-      contents: write
-    steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
-        with:
-          persist-credentials: false
-      - uses: pnpm/action-setup@41ff72655975bd51cab0327fa583b6e92b6d3061
-        with:
-          version: 10.26.2
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
-        with:
-          node-version: 24
-      - name: Generate only lockfiles and rustfmt output
-        run: |
-          rustup toolchain install 1.98.1 --profile minimal --component rustfmt --component clippy
-          cargo generate-lockfile
-          cargo fmt --all
-          pnpm install --lockfile-only --ignore-scripts
-      - name: Store generated objects for review, without commits or ref changes
-        env:
-          REVIEW_TOKEN: ${{ github.token }}
-        run: python3 .github/prepare-generated.py
   check:
     runs-on: ubuntu-latest
     timeout-minutes: 20
@@ -43,29 +22,89 @@ jobs:
         image: postgres:17
         env:
           POSTGRES_USER: starter
-          POSTGRES_PASSWORD: ci-only-password
+          POSTGRES_PASSWORD: integration-test-only
           POSTGRES_DB: starter_test_ci
-        ports: ['5432:5432']
+        ports:
+          - 5432:5432
         options: >-
           --health-cmd "pg_isready -U starter -d starter_test_ci"
           --health-interval 5s --health-timeout 3s --health-retries 10
+      mailpit:
+        image: axllent/mailpit:v1.31.1
+        ports:
+          - 1025:1025
+          - 8025:8025
     env:
       APP_MODE: test
-      APP_DATABASE_URL: postgresql://starter:ci-only-password@127.0.0.1:5432/starter_test_ci?sslmode=disable
+      APP_BIND: 127.0.0.1:8088
+      APP_ORIGIN: http://127.0.0.1:5178
+      APP_DATABASE_URL: postgresql://starter:integration-test-only@127.0.0.1:5432/starter_test_ci?sslmode=disable
+      SMTP_HOST: 127.0.0.1
+      SMTP_PORT: 1025
+      MAIL_FROM: Starter <noreply@example.test>
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
         with:
           persist-credentials: false
-      - name: Bootstrap compiler and formatting
+      - name: Install pinned Rust
+        run: rustup toolchain install 1.98.1 --profile minimal --component rustfmt --component clippy
+      - name: Verify locked Rust build and rules
         run: |
-          rustup toolchain install 1.98.1 --profile minimal --component rustfmt --component clippy
-          cargo generate-lockfile
-          cargo fmt --all
-      - name: Clippy
-        run: cargo clippy --locked --all-targets -- -D warnings
-      - name: Unit tests
-        run: cargo test --locked
-      - name: Explicit database bootstrap and check
+          cargo fetch --locked
+          cargo fmt --all --check
+          cargo clippy --locked --all-targets -- -D warnings
+          cargo test --locked
+          cargo build --locked
+      - uses: pnpm/action-setup@41ff72655975bd51cab0327fa583b6e92b6d3061
+        with:
+          version: 10.26.2
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: 24
+          cache: pnpm
+      - name: Install locked frontend dependencies
+        run: pnpm install --frozen-lockfile
+      - name: TypeScript, reused client helpers and PWA build
         run: |
-          cargo run --locked -p starter-server -- migrate
-          cargo run --locked -p starter-server -- check
+          pnpm check
+          pnpm test
+          pnpm build
+      - name: Install Chromium
+        run: pnpm exec playwright install --with-deps chromium
+      - name: Real PostgreSQL, SMTP, browser and shutdown regression
+        run: |
+          set -euo pipefail
+          target/debug/starter-server migrate
+          target/debug/starter-server migrate
+          target/debug/starter-server check
+          target/debug/starter-server serve > /tmp/starter-test.log 2>&1 &
+          server_pid=$!
+          trap 'kill "$server_pid" 2>/dev/null || true' EXIT
+          for attempt in $(seq 1 30); do
+            if curl --silent --fail http://127.0.0.1:8088/health/ready >/dev/null; then break; fi
+            kill -0 "$server_pid"
+            sleep 1
+          done
+          curl --silent --show-error --fail http://127.0.0.1:8088/health/ready
+          python3 tests/http_integration.py
+          # A fresh process gives browser tests their own documented throttle budget.
+          kill -TERM "$server_pid"
+          timeout 15 tail --pid="$server_pid" -f /dev/null
+          wait "$server_pid"
+          target/debug/starter-server prune
+          target/debug/starter-server serve > /tmp/starter-browser.log 2>&1 &
+          server_pid=$!
+          for attempt in $(seq 1 30); do
+            if curl --silent --fail http://127.0.0.1:8088/health/ready >/dev/null; then break; fi
+            kill -0 "$server_pid"
+            sleep 1
+          done
+          pnpm test:e2e
+          kill -TERM "$server_pid"
+          timeout 15 tail --pid="$server_pid" -f /dev/null
+          wait "$server_pid"
+          trap - EXIT
+      - name: Dependency audit
+        run: pnpm audit --audit-level high
+      - name: Verify tracked source and locks stayed unchanged
+        run: git diff --exit-code
