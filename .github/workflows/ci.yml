@@ -87,6 +87,7 @@ jobs:
           done
           curl --silent --show-error --fail http://127.0.0.1:8088/health/ready
           python3 tests/http_integration.py
+          python3 tests/session_expiry.py
           # A fresh process gives browser tests their own documented throttle budget.
           kill -TERM "$server_pid"
           timeout 15 tail --pid="$server_pid" -f /dev/null

@@ -38,7 +38,9 @@ pub async fn authorize(
     if locked.is_none() {
         return Err(Error::Unauthenticated);
     }
-    let row = tx.query_opt("UPDATE starter.sessions s SET last_seen_at=now() FROM starter.users u WHERE s.token_hash=$1 AND u.id=s.user_id AND NOT u.disabled AND s.auth_epoch=u.auth_epoch AND s.expires_at>now() AND s.last_seen_at>now()-s.idle_seconds*interval '1 second' RETURNING u.id,u.email,u.display_name,u.theme,u.email_verified,extract(epoch FROM s.expires_at)::bigint AS expires_at,s.idle_seconds", &[&token_hash]).await?.ok_or(Error::Unauthenticated)?;
+    // now() is the transaction start time, potentially before the lock wait.
+    // Check the real clock after acquiring the user lock, including idle expiry.
+    let row = tx.query_opt("UPDATE starter.sessions s SET last_seen_at=clock_timestamp() FROM starter.users u WHERE s.token_hash=$1 AND u.id=s.user_id AND NOT u.disabled AND s.auth_epoch=u.auth_epoch AND s.expires_at>clock_timestamp() AND s.last_seen_at>clock_timestamp()-s.idle_seconds*interval '1 second' RETURNING u.id,u.email,u.display_name,u.theme,u.email_verified,extract(epoch FROM s.expires_at)::bigint AS expires_at,s.idle_seconds", &[&token_hash]).await?.ok_or(Error::Unauthenticated)?;
     let view = SessionView {
         user: user(&row),
         expires_at: row.get("expires_at"),
