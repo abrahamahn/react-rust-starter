@@ -10,7 +10,7 @@ const messages: Record<string, string> = {
   service_unavailable: 'The service is unavailable. Please retry later.', origin_rejected: 'This app origin is not allowed. Check APP_ORIGIN.',
 };
 export class ApiError extends Error { constructor(public code: string, public status: number) { super(messages[code] ?? 'The request failed. Please try again.'); } }
-export async function request(path: string, options: { method?: string; body?: unknown; signal?: AbortSignal } = {}): Promise<unknown> {
+export async function request(path: string, options: { method?: string; body?: unknown; signal?: AbortSignal; notifyUnauthorized?: boolean } = {}): Promise<unknown> {
   const method = options.method ?? 'GET';
   let response: Response;
   try {
@@ -24,13 +24,14 @@ export async function request(path: string, options: { method?: string; body?: u
   if (!response.ok) {
     const value = await response.json().catch(() => null);
     const code = typeof value?.error?.code === 'string' ? value.error.code : 'request_failed';
-    if (code === 'unauthenticated') window.dispatchEvent(new Event('starter:unauthenticated'));
+    if (code === 'unauthenticated' && options.notifyUnauthorized !== false && !options.signal?.aborted && typeof window !== 'undefined') window.dispatchEvent(new Event('starter:unauthenticated'));
     throw new ApiError(code, response.status);
   }
   if (response.status === 204 || response.status === 202) return null;
   return response.json();
 }
 export async function currentSession(signal?: AbortSignal) {
-  try { return parseSession(await request('/auth/session', { signal })); }
+  // The session hook owns generation checks. An old GET must not sign out a newer login.
+  try { return parseSession(await request('/auth/session', { signal, notifyUnauthorized: false })); }
   catch (error) { if (error instanceof ApiError && error.code === 'unauthenticated') return null; throw error; }
 }
