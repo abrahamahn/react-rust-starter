@@ -3,7 +3,9 @@
   "private": true,
   "type": "module",
   "packageManager": "pnpm@10.26.2",
-  "engines": { "node": ">=22.16 <25" },
+  "engines": {
+    "node": ">=22.16 <25"
+  },
   "scripts": {
     "dev": "node scripts/dev.mjs",
     "dev:web": "pnpm --filter @starter/pwa dev",
@@ -19,8 +21,8 @@
   },
   "devDependencies": {
     "@playwright/test": "1.58.2",
-    "@types/node": "^24.0.0",
-    "tsx": "^4.21.0",
+    "@types/node": "^24.19.2",
+    "tsx": "^4.23.15",
     "typescript": "^5.9.3"
   }
 }
