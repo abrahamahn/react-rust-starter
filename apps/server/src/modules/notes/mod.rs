@@ -1,4 +1,3 @@
 mod domain;
-mod http;
+pub mod http;
 mod store;
-pub use http::router;

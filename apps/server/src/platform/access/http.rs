@@ -1,4 +1,11 @@
-use super::{Service, domain::*, session_policy};
+use super::{
+    domain::{
+        ChangePassword, Credentials, EmailRequest, ProfileRequest, ResetRequest, SessionView,
+        TokenRequest, UserView,
+    },
+    service::Service,
+    session_policy,
+};
 use crate::platform::http::Error;
 use axum::{
     Json, Router,

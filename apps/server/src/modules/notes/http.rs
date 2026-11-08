@@ -1,6 +1,9 @@
-use super::{domain::*, store};
+use super::{
+    domain::{DeleteNote, Note, WriteNote},
+    store,
+};
 use crate::platform::{
-    access::{Service, authorize},
+    access::{service::Service, store::authorize},
     db::Database,
     http::Error,
 };

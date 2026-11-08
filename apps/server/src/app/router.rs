@@ -1,7 +1,12 @@
 use crate::{
     app::config::Config,
-    modules::notes,
-    platform::{access, db::Database, http::Error, mail::Mailer},
+    modules::notes::http as notes_http,
+    platform::{
+        access::{http as access_http, service::Service},
+        db::Database,
+        http::Error,
+        mail::Mailer,
+    },
 };
 use axum::{
     Json, Router,
@@ -15,15 +20,15 @@ use axum::{
 use serde_json::json;
 
 pub fn router(config: Config, database: Database, mailer: Mailer) -> Router {
-    let access = access::Service::new(database.clone(), config, mailer);
+    let access = Service::new(database.clone(), config, mailer);
     Router::new()
         .route(
             "/health/live",
             get(|| async { Json(json!({"status":"ok"})) }),
         )
         .route("/health/ready", get(ready).with_state(database.clone()))
-        .merge(access::router(access.clone()))
-        .merge(notes::router(database, access))
+        .merge(access_http::router(access.clone()))
+        .merge(notes_http::router(database, access))
         .fallback(|| async { Error::NotFound })
         .layer(DefaultBodyLimit::max(65_536))
         .layer(tower_http::timeout::TimeoutLayer::with_status_code(

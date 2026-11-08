@@ -1,5 +1,13 @@
 // BSLT R1 hashing admission and bounded throttle, extended for account lifecycle.
-use super::{crypto, domain::*, store::Store};
+use super::{
+    crypto,
+    domain::{
+        ChangePassword, Credentials, EmailRequest, ResetRequest, SessionView, TokenRequest,
+        normalize_email, validate_password, validate_token,
+    },
+    store::Store,
+    throttle::Throttle,
+};
 use crate::{
     app::config::Config,
     platform::{
@@ -9,11 +17,11 @@ use crate::{
     },
 };
 use std::{
-    collections::HashMap,
     sync::{Arc, Mutex},
     time::{Duration, Instant},
 };
 use tokio::sync::Semaphore;
+
 #[derive(Clone)]
 pub struct Service {
     pub(super) store: Store,
@@ -22,33 +30,7 @@ pub struct Service {
     throttle: Arc<Mutex<Throttle>>,
     mailer: Mailer,
 }
-struct Throttle {
-    global: (Instant, usize),
-    accounts: HashMap<String, (Instant, usize)>,
-}
-impl Throttle {
-    fn admit(&mut self, account: &str, now: Instant) -> Result<(), Error> {
-        if now.duration_since(self.global.0) >= Duration::from_secs(60) {
-            self.global = (now, 0);
-        }
-        if self.global.1 >= 60 {
-            return Err(Error::RateLimited);
-        }
-        self.accounts
-            .retain(|_, (at, _)| now.duration_since(*at) < Duration::from_secs(300));
-        let key = crypto::digest(account);
-        if !self.accounts.contains_key(&key) && self.accounts.len() >= 512 {
-            return Err(Error::RateLimited);
-        }
-        let entry = self.accounts.entry(key).or_insert((now, 0));
-        if entry.1 >= 10 {
-            return Err(Error::RateLimited);
-        }
-        entry.1 += 1;
-        self.global.1 += 1;
-        Ok(())
-    }
-}
+
 impl Service {
     pub fn new(database: Database, config: Config, mailer: Mailer) -> Self {
         Self {
@@ -56,10 +38,7 @@ impl Service {
             config: Arc::new(config),
             mailer,
             hashing: Arc::new(Semaphore::new(2)),
-            throttle: Arc::new(Mutex::new(Throttle {
-                global: (Instant::now(), 0),
-                accounts: HashMap::new(),
-            })),
+            throttle: Arc::new(Mutex::new(Throttle::new(Instant::now()))),
         }
     }
     pub(super) fn admit(&self, key: &str) -> Result<(), Error> {
@@ -200,7 +179,11 @@ impl Service {
             .store
             .consume(&crypto::digest(&input.token), "reset", Some(&hash))
             .await?;
-        mail.send(Delivery { to:email,subject:"Password changed".into(),text:"Your password was reset. All previous sessions were revoked. Sign in normally with your new password.".into() });
+        mail.send(Delivery {
+            to: email,
+            subject: "Password changed".into(),
+            text: "Your password was reset. All previous sessions were revoked. Sign in normally with your new password.".into(),
+        });
         Ok(())
     }
     pub(super) async fn change(&self, digest: &str, input: ChangePassword) -> Result<(), Error> {
@@ -257,28 +240,5 @@ impl Service {
             return Err(Error::Forbidden);
         }
         Ok(())
-    }
-}
-#[cfg(test)]
-mod tests {
-    use super::*;
-    #[test]
-    fn throttle_is_bounded_and_expires() {
-        let start = Instant::now();
-        let mut throttle = Throttle {
-            global: (start, 0),
-            accounts: HashMap::new(),
-        };
-        for _ in 0..10 {
-            throttle.admit("user@example.test", start).unwrap();
-        }
-        assert!(matches!(
-            throttle.admit("user@example.test", start),
-            Err(Error::RateLimited)
-        ));
-        throttle
-            .admit("user@example.test", start + Duration::from_secs(301))
-            .unwrap();
-        assert_eq!(throttle.accounts.len(), 1);
     }
 }
